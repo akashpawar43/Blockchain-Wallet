@@ -52,7 +52,7 @@ TRON_EVENT_NODE=https://api.trongrid.io
 DEFAULT_PRIVATE_KEY=0x...your_test_private_key_here
 ```
 
-### 4. Migrate and generate Prisma client
+### 4. Run Server
 ```
 npm run dev
 ```

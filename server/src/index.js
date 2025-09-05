@@ -3,22 +3,11 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import { ethers, formatEther } from 'ethers';
 import { TronWeb } from 'tronweb';
-import fs from 'fs';
+import { newEthereumWallet, newTronWallet } from './utils/createWallets.js';
+import { loadWallets, saveWallets } from './utils/wallets.js';
 
 const app = express();
 app.use(bodyParser.json());
-
-const WALLET_STORE = './wallets.json';
-function loadWallets() {
-    try {
-        return JSON.parse(fs.readFileSync(WALLET_STORE, 'utf8') || '{}');
-    } catch (e) {
-        return {};
-    }
-}
-function saveWallets(obj) {
-    fs.writeFileSync(WALLET_STORE, JSON.stringify(obj, null, 2));
-}
 
 /* ---------- Ethereum setup ---------- */
 const ethProvider = new ethers.JsonRpcProvider(process.env.ETH_RPC);
@@ -44,44 +33,30 @@ const tronweb = new TronWeb({
 //     // privateKey: null // private key not provided globally — we will pass per-wallet
 // });
 
-/* ---------- Utilities ---------- */
-function newEthereumWallet() {
-    const wallet = ethers.Wallet.createRandom();
-    return {
-        type: 'ethereum',
-        address: wallet.address,
-        privateKey: wallet.privateKey
-    };
-}
-async function newTronWallet() {
-    const account = await TronWeb.createAccount();
-    return {
-        type: 'tron',
-        address: account.address.base58,   // Tron base58 address
-        privateKey: account.privateKey
-    };
-}
-
 /* ---------- Endpoints ---------- */
 
 /* Create wallet (type: 'ethereum' or 'tron') */
 app.post('/wallet/create', async (req, res) => {
-    const { type } = req.body;
-    if (!type || !['ethereum', 'tron'].includes(type)) {
-        return res.status(400).json({ error: "type required: 'ethereum' or 'tron'" });
+    try {
+        const { type } = req.body;
+        if (!type || !['ethereum', 'tron'].includes(type)) {
+            return res.status(400).json({ error: "type required: 'ethereum' or 'tron'" });
+        }
+    
+        const wallets = loadWallets();
+        let w;
+        if (type === 'ethereum') w = newEthereumWallet();
+        else w = await newTronWallet();
+    
+        // Save (demo): store by address
+        wallets[w.address] = w;
+        saveWallets(wallets);
+    
+        // return address only (not private key) unless explicitly requested (for demo we include it)
+        return res.json({ address: w.address, privateKey: w.privateKey });
+    } catch (error) {
+        return res.status(500).json({ error: error.message });
     }
-
-    const wallets = loadWallets();
-    let w;
-    if (type === 'ethereum') w = newEthereumWallet();
-    else w = await newTronWallet();
-
-    // Save (demo): store by address
-    wallets[w.address] = w;
-    saveWallets(wallets);
-
-    // return address only (not private key) unless explicitly requested (for demo we include it)
-    return res.json({ address: w.address, privateKey: w.privateKey });
 });
 
 async function getTronTransactions(address) {
@@ -201,6 +176,7 @@ app.get('/tron/trc20/balance', async (req, res) => {
 /* Simple listing of stored wallets (demo) */
 app.get('/wallets', (req, res) => {
     const wallets = loadWallets();
+    console.log("wallets:", wallets)
     // For safety, do not return private keys in production.
     const clean = Object.values(wallets).map(w => ({ address: w.address, type: w.type }));
     res.json(clean);
